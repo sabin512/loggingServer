@@ -1,10 +1,13 @@
 #!/usr/bin/python3
 import sys
 import socketserver
+import argparse
 from datetime import datetime
 
 CONTENT_LENGTH = 'content-length'
 ENCODING = 'utf-8'
+DEFAULT_PORT = 8000
+DEFAULT_HOST = 'localhost'
 
 def save_data(data_entry):
     f = open('server.log', 'a+')
@@ -12,33 +15,36 @@ def save_data(data_entry):
     f.write('\n')
     f.close()
 
+def save_print(message):
+    print(message)
+    save_data(message)
+
 class MyTCPHandler(socketserver.StreamRequestHandler):
     def handle(self):
-        headers = {}
         client = self.client_address[0]
         save_data('%s - %s wrote:' % (datetime.now().strftime('%c'), client))
-        try:
-            line = self.rfile.readline()
-            line_number = 0
-            while True:                
-                save_data('Line %d: [%s]' % (line_number, line))
-                self.read_known_header(headers, line)
-                line_number += 1
-                line = self.rfile.readline()
-                if self.is_end_of_headers(line):
-                    save_data('Line %d was empty, headers finished.' % line_number)
-                    break
-
-            save_data('Current parsed headers are %s' % headers)
-            if CONTENT_LENGTH in headers:
-                self.read_request_data(headers)
-        except:
-           print('Got exception: %s' % sys.exc_info()[0])
-           save_data('Got exception: %s' % sys.exc_info()[0])
+        headers = self.read_headers()
+        save_data('Current parsed headers are %s' % headers)
+        if CONTENT_LENGTH in headers:
+            self.read_request_data(headers)
 
         save_data('Request Finished\n')
 
-    def read_known_header(self, headers, line):
+    def read_headers(self):
+        headers = {}    
+        line = self.rfile.readline()
+        line_number = 0
+        while True:                
+            save_data('Line %d: [%s]' % (line_number, line))
+            self.save_known_header(headers, line)
+            line_number += 1
+            line = self.rfile.readline()
+            if self.is_end_of_headers(line):
+                save_data('Line %d was empty, headers finished.' % line_number)
+                break
+        return headers
+
+    def save_known_header(self, headers, line):
         known_headers = [CONTENT_LENGTH]
         line_str = line.decode(ENCODING)
         split_header = line_str.split(':')
@@ -58,13 +64,23 @@ class MyTCPHandler(socketserver.StreamRequestHandler):
         save_data('Received data [%s]' % request_data)
 
 if __name__ == '__main__':
-    HOST, PORT = '10.0.1.23', 8000
-    server = socketserver.TCPServer((HOST, PORT), MyTCPHandler)
+    parser = argparse.ArgumentParser(description='A small HTTP server that logs requests into a log file.')
+    parser.add_argument('-port', type=int, default=DEFAULT_PORT, 
+                        help='port number (default: %s)' % DEFAULT_PORT, dest='port_number')
+    parser.add_argument('-host', default=DEFAULT_HOST,
+                        help='host to listen on (default: %s)' % DEFAULT_HOST, dest='host')
+    args = parser.parse_args()
+
+    server = socketserver.TCPServer((args.host, args.port_number), MyTCPHandler)
     server.timeout = 5
-    start_message = 'Starting to serve requests on %s at %s' % (PORT, datetime.now().strftime('%c'))
-    print(start_message)
-    save_data(start_message)
+    save_print('Starting to serve requests on %s at %s' % (args.port_number, datetime.now().strftime('%c')))
     print('Press Ctrl+C to stop')
     while True:
-        server.handle_request()
-
+        try:
+            server.handle_request()
+        except KeyboardInterrupt:
+            save_print('Server was asked to shutdown')
+            break
+        except:
+            save_print('Got exception: %s' % sys.exc_info()[0])
+            break
