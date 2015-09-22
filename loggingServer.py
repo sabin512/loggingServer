@@ -23,7 +23,12 @@ class MyTCPHandler(socketserver.StreamRequestHandler):
     def handle(self):
         client = self.client_address[0]
         save_data('%s - %s wrote:' % (datetime.now().strftime('%c'), client))
-        headers = self.read_headers()
+        try:
+            headers = self.read_headers()
+        except KeyboardInterrupt:
+            save_print('\nServer was asked to terminate this request')
+            return
+
         save_data('Current parsed headers are %s' % headers)
         if CONTENT_LENGTH in headers:
             self.read_request_data(headers)
@@ -39,6 +44,7 @@ class MyTCPHandler(socketserver.StreamRequestHandler):
             self.save_known_header(headers, line)
             line_number += 1
             line = self.rfile.readline()
+
             if self.is_end_of_headers(line):
                 save_data('Line %d was empty, headers finished.' % line_number)
                 break
@@ -79,7 +85,7 @@ if __name__ == '__main__':
         try:
             server.handle_request()
         except KeyboardInterrupt:
-            save_print('Server was asked to shutdown')
+            save_print('\nServer was asked to shutdown')
             break
         except:
             save_print('Got exception: %s' % sys.exc_info()[0])
